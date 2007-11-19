@@ -1,39 +1,74 @@
 " Vim indent script
-" Comments: "{{{
-" File:		html.vim
+" General: "{{{
+" File:		html.vim (Vimscript #2075)
 " Author:	Andy Wokula, anwoku#yahoo*de (#* -> @.)
-" Last Change:	2007 Nov 18
-" Version:	0.2 (still experimental)
+" Last Change:	2007 Nov 20
+" Version:	0.3
 " Vim Version:	Vim7
 " Description:
-" - Speedup: uses state and benefits of Vim7
-" - more exact: checks all the tags in a line, considers comments
-" - uses search() instead of searchpair()
-" - no extra indent after <html>, <head>, <body>, <tbody>; <script> content
-"   starts with zero indent
-" - s:Alien*() functions for indenting inner block contents
-" - command :IndHtmlLocal for tuning script internals
+"   improved version of the distributed html indent script
+" - Based on:
+"	indent/html.vim from J. Zellner (2006 Jun 05)
+"	indent/css.vim from N. Weibull (2006 Dec 20)
+" - indenting regions:
+"	Blocktag : Indent-Expr
+"	   <pre> : -1 (= keep indent)
+"	<script> : 0		    if first line of block
+"		 : cindent(v:lnum)  if attributes empty or contain "java"
+"		 : -1		    else (vbscript, tcl, ...)
+"	<style>  : 0		    if first line of block
+"		 : GetCSSIndent()   else (v0.3)
+"	<!-- --> : -1
+" - speedup: uses a state to support indenting a range of lines; benefits of
+"   Vim7, uses search() instead of searchpair()
+" - more exact when checking tags in a line
+" - per default no extra indent for <html>, <head>, <body>
 " - no syntax dependencies
-" Based On:
-" - the distributed script from J. Zellner (last change 2006 Jun 05)
 " Example:
 "   2900 non-blank lines of http://www.weather.com/weather/local/USPA0372
 "   without state: 11.75 sec (already much faster than the old script)
 "   with state: 2.27 sec (again 5 times faster) (machine 1.2 GHz Athlon)
 " Problems:
-" - natural state problem:
+" - natural state problem: to reproduce,
 "	indent line N with "=="
 "	change line N with ">>"	    (no update of state)
 "	indent line N+1 with "=="   (wrong indent)
 "	indent line N+1 with "=="   (workaround to get correct indent)
-"   I won't fix this
-" - quite bloated
-" - attributes spanning over several lines
-" - s:FreshState() doesn't ignore a commented blocktag; other nesting
-"   problems
+" - attributes spanning over several lines (but occurs rarely in websites)
+" - s:FreshState() doesn't ignore a commented blocktag; nesting in general
 " Hmm:
 " ? use of the term "blocktag"
 " ? call "<!--" and "-->" tags
+ "}}}
+" Customization: "{{{
+" :IndHtmlLocal {cmd}
+"	change internals after loading the script, e.g. command is available
+"	in after/indent/html.vim
+"
+" Examples:
+" :IndHtmlLocal call s:IndAdder("body","head","tbody")
+"	add tags "itags" that add an indent step.  The above command
+"	restores defaults of the distributed script, that could formerly be
+"	disabled with  :let g:html_indent_strict = 1
+"
+" :IndHtmlLocal call s:NoIndAdder("th","td","tr","tfoot","thead")
+"	remove given itags (silently), this is like the former
+"	:let g:html_indent_strict_table = 1
+"
+" :IndHtmlLocal let s:usestate = 0
+"	test performance with state ignored (default 1)
+"
+" :IndHtmlLocal func! s:CSSIndent()
+" :    return -1
+" :endfunc
+" :IndHtmlLocal let s:css1indent = -1	" default 0
+"	disable the CSS-Indenter -- use indent -1 for <style> regions
+"	(this is not very practical, just a demo of what can be done)
+"
+" :delfunc HtmlIndent
+" :IndHtmlLocal let s:css1indent = 0
+" :edit					" reload .html file
+"	re-enable the CSS-Indenter during session
  "}}}
 
 " Init Folklore: "{{{
@@ -42,14 +77,14 @@ if exists("b:did_indent")
 endif
 let b:did_indent = 1
 
-setlocal indentexpr=HtmlIndent(v:lnum)
+setlocal indentexpr=HtmlIndent()
 setlocal indentkeys=o,O,*<Return>,<>>,{,},!^F
 
 let b:indent = {"lnum": -1}
 let b:undo_indent = "set inde< indk<| unlet b:indent"
 
 " Load Once:
-if exists("*s:FreshState")
+if exists("*HtmlIndent")
     finish
 endif
 
@@ -59,128 +94,63 @@ set cpo-=C
 
 " Init Script Vars  "{{{
 let s:usestate = 1
+let s:css1indent = 0
 " not to be changed:
-let s:endtags = []
+let s:endtags = [0,0,0,0,0,0,0,0]   " places unused
 let s:newstate = {}
 let s:countonly = 0
  "}}}
 func! s:IndAdder(tag, ...) "{{{
-    " a:tag
-    "	tag that changes indent
-    " a:1
-    "	1 (default): add an indent [unit shiftwidth] for next line
-    "	2,3,4: special values (no indents!) for opening blocktags:
-    "	    <pre>, <script>, <style>
-    "	5: comments <!-- -->
-    " a:2
-    "	explicit closing tag
-    "	if not given, "/".tag is implied
-    let val = a:0==0 ? 1 : a:1
-    let g:html_indent_tags[a:tag] = val
-    let c_tag = a:0<2 ? '/'.a:tag : a:2
-    let g:html_indent_tags[c_tag] = -val
-    if val >= 2
-	if len(s:endtags) < val-2+1
-	    call extend(s:endtags, range(2, val-len(s:endtags)))
-	endif
-	let s:endtags[val-2] = a:0<2 ? '<'.c_tag.'>' : c_tag
+    if a:0 == 0
+	let val = 1
+    elseif a:1 >= 2 && a:1 < 10
+	let val = a:1
+	let s:endtags[val-2] = "</".a:tag.">"
+    else
+	call s:IndAdder(a:tag)
+	call map(copy(a:000), 's:IndAdder(v:val)')
+	return
     endif
-endfunc
-
-func! s:NoIndAdder(...)
-    " remove tags from g:html_indent_tags
+    let s:indent_tags[a:tag] = val
+    let s:indent_tags['/'.a:tag] = -val
+endfunc "}}}
+func! s:NoIndAdder(...) "{{{
+    " remove itags (protect blocktags from being removed)
     for itag in a:000
-	sil! unlet g:html_indent_tags[itag]
+	if !has_key(s:indent_tags, itag) || s:indent_tags[itag] != 1
+	    continue
+	endif
+	unlet s:indent_tags[itag]
 	if itag =~ '^\a\+$'
-	    sil! unlet g:html_indent_tags["/".itag]
+	    unlet s:indent_tags["/".itag]
 	endif
     endfor
-endfunc
-
-"}}}
+endfunc "}}}
 " IndAdder Calls: {{{
-if !exists("g:html_indent_tags")
-    let g:html_indent_tags = {}
+if !exists("s:indent_tags")
+    let s:indent_tags = {}
 endif
-call s:IndAdder('a')
-call s:IndAdder('abbr')
-call s:IndAdder('acronym')
-call s:IndAdder('address')
-call s:IndAdder('b')
-call s:IndAdder('bdo')
-call s:IndAdder('big')
-call s:IndAdder('blockquote')
-call s:IndAdder('button')
-call s:IndAdder('caption')
-call s:IndAdder('center')
-call s:IndAdder('cite')
-call s:IndAdder('code')
-call s:IndAdder('colgroup')
-call s:IndAdder('del')
-call s:IndAdder('dfn')
-call s:IndAdder('dir')
-call s:IndAdder('div')
-call s:IndAdder('dl')
-call s:IndAdder('em')
-call s:IndAdder('fieldset')
-call s:IndAdder('font')
-call s:IndAdder('form')
-call s:IndAdder('frameset')
-call s:IndAdder('h1')
-call s:IndAdder('h2')
-call s:IndAdder('h3')
-call s:IndAdder('h4')
-call s:IndAdder('h5')
-call s:IndAdder('h6')
-call s:IndAdder('i')
-call s:IndAdder('iframe')
-call s:IndAdder('ins')
-call s:IndAdder('kbd')
-call s:IndAdder('label')
-call s:IndAdder('legend')
-call s:IndAdder('map')
-call s:IndAdder('menu')
-call s:IndAdder('noframes')
-call s:IndAdder('noscript')
-call s:IndAdder('object')
-call s:IndAdder('ol')
-call s:IndAdder('optgroup')
-call s:IndAdder('q')
-call s:IndAdder('s')
-call s:IndAdder('samp')
-call s:IndAdder('select')
-call s:IndAdder('small')
-call s:IndAdder('span')
-call s:IndAdder('strong')
-call s:IndAdder('sub')
-call s:IndAdder('sup')
-call s:IndAdder('table')
-call s:IndAdder('textarea')
-call s:IndAdder('title')
-call s:IndAdder('tt')
-call s:IndAdder('u')
-call s:IndAdder('ul')
+call s:IndAdder('a', 'abbr', 'acronym', 'address', 'b', 'bdo', 'big')
+call s:IndAdder('blockquote', 'button', 'caption', 'center', 'cite', 'code')
+call s:IndAdder('colgroup', 'del', 'dfn', 'dir', 'div', 'dl', 'em')
+call s:IndAdder('fieldset', 'font', 'form', 'frameset', 'h1', 'h2', 'h3')
+call s:IndAdder('h4', 'h5', 'h6')
+" call s:IndAdder('html')
+call s:IndAdder('i', 'iframe', 'ins', 'kbd', 'label', 'legend', 'map')
+call s:IndAdder('menu', 'noframes', 'noscript', 'object', 'ol', 'optgroup')
+call s:IndAdder('q', 's', 'samp', 'select', 'small', 'span', 'strong')
+call s:IndAdder('sub', 'sup', 'table', 'textarea', 'title', 'tt', 'u', 'ul')
 call s:IndAdder('var')
+call s:IndAdder('th', 'td', 'tr', 'tfoot', 'thead')
 "}}}
 " Block Tags: contain alien content "{{{
 call s:IndAdder('pre', 2)
 call s:IndAdder('script', 3)
 call s:IndAdder('style', 4)
 " Exception: handle comment delimiters <!--...--> like block tags
-call s:IndAdder("<!--", 5, '-->')
-" if !exists('g:html_indent_strict')
-"     call s:IndAdder('body')
-"     call s:IndAdder('head')
-"     call s:IndAdder('tbody')
-" endif
-
-if !exists('g:html_indent_strict_table')
-    call s:IndAdder('th')
-    call s:IndAdder('td')
-    call s:IndAdder('tr')
-    call s:IndAdder('tfoot')
-    call s:IndAdder('thead')
-endif "}}}
+let s:indent_tags["<!--"] = 5
+let s:indent_tags['-->'] = -5
+"}}}
 
 func! s:CountITags(...) "{{{
 
@@ -205,7 +175,7 @@ func! s:CountITags(...) "{{{
 endfunc "}}}
 func! s:CheckTag(itag) "{{{
     " "tag" or "/tag" or "<!--" or "-->"
-    let ind = get(g:html_indent_tags, a:itag)
+    let ind = get(s:indent_tags, a:itag)
     if ind == -1
 	" closing tag
 	if s:block != 0
@@ -242,7 +212,7 @@ func! s:Blocktag(blocktag, ind) "{{{
 	if s:countonly
 	    return "foo"
 	endif
-	let s:newstate.blocklnr = s:lnum	" not used
+	let s:newstate.blocklnr = v:lnum
 	" save allover indent for the endtag
 	let s:newstate.blocktagind = b:indent.baseindent + (s:nextrel + s:curind) * &shiftwidth
 	if a:ind == 3
@@ -315,13 +285,13 @@ func! s:FreshState(lnum) "{{{
     let blocktag = matchstr(tagline, '\/\=\%(pre\>\|script\>\|style\>\)', stopcol-1)
     if stopline > 0 && blocktag[0] != "/"
 	" opening tag found, assume a:lnum within block
-	let state.block = g:html_indent_tags[blocktag]
+	let state.block = s:indent_tags[blocktag]
 	if state.block == 3
 	    let state.scripttype = s:GetScriptType(matchstr(tagline, '\>[^>]*', stopcol))
 	endif
 	let state.blocklnr = stopline
 	" check preceding tags in the line:
-	let s:altline = tagline[: stopcol-2]	" XXX -1, -2, -3?
+	let s:altline = tagline[: stopcol-2]
 	call s:CountITags(1)
 	let state.blocktagind = indent(stopline) + (s:curind + s:nextrel) * &shiftwidth
 	return state
@@ -388,40 +358,97 @@ func! s:Alien2() "{{{
 endfunc "}}}
 func! s:Alien3() "{{{
     " <script> javascript
-    if prevnonblank(s:lnum-1) == b:indent.blocklnr
+    if prevnonblank(v:lnum-1) == b:indent.blocklnr
 	" indent for the first line after <script>
 	return 0
     endif
     if b:indent.scripttype == "javascript"
-	return cindent(s:lnum)
+	return cindent(v:lnum)
     else
 	return -1
     endif
 endfunc "}}}
 func! s:Alien4() "{{{
     " <style>
-    return -1
+    if prevnonblank(v:lnum-1) == b:indent.blocklnr
+	" indent for first content line
+	return s:css1indent
+    endif
+    return s:CSSIndent()
+endfunc
+
+func! s:CSSIndent() "{{{
+    " adopted $VIMRUNTIME/indent/css.vim
+    if getline(v:lnum) =~ '^\s*[*}]'
+	return cindent(v:lnum)
+    endif
+    let minline = b:indent.blocklnr
+    let pnum = s:css_prevnoncomment(v:lnum - 1, minline)
+    if pnum <= minline
+	" < is to catch errors
+	" indent for first content line
+	return 0
+    endif
+    let ind = indent(pnum) + s:css_countbraces(pnum, 1) * &sw
+    let pline = getline(pnum)
+    if pline =~ '}\s*$'
+	let ind -= (s:css_countbraces(pnum, 0) - (pline =~ '^\s*}')) * &sw
+    endif
+    return ind
 endfunc "}}}
+func! s:css_prevnoncomment(lnum, stopline) "{{{
+    " caller starts from a line a:lnum-1 that is not a comment
+    let lnum = prevnonblank(a:lnum)
+    let ccol = match(getline(lnum), '\*/')
+    if ccol < 0
+	return lnum
+    endif
+    call cursor(lnum, ccol+1)
+    let lnum = search('/\*', 'bW', a:stopline)
+    if indent(".") == virtcol(".")-1
+	return lnum-1
+    else
+	return lnum
+    endif
+endfunc "}}}
+func! s:css_countbraces(lnum, count_open) "{{{
+    let brs = substitute(getline(a:lnum),'[''"].\{-}[''"]\|/\*.\{-}\*/\|/\*.*$\|[^{}]','','g')
+    let n_open = 0
+    let n_close = 0
+    for brace in split(brs, '\zs')
+	if brace == "{"
+	    let n_open += 1
+	elseif brace == "}"
+	    if n_open > 0
+		let n_open -= 1
+	    else
+		let n_close += 1
+	    endif
+	endif
+    endfor
+    return a:count_open ? n_open : n_close
+endfunc "}}}
+
+"}}}
 func! s:Alien5() "{{{
     " <!-- -->
     return -1
 endfunc "}}}
 
-func! HtmlIndent(lnum) "{{{
-    let s:lnum = a:lnum
-    let s:curline = tolower(getline(s:lnum))
+func! HtmlIndent() "{{{
+    let s:curline = tolower(getline(v:lnum))
 
     let s:newstate = {}
-    let s:newstate.lnum = s:lnum
+    let s:newstate.lnum = v:lnum
 
     " is the first non-blank in the line the start of a tag?
     let swtag = match(s:curline, '^\s*<') >= 0
 
-    if prevnonblank(s:lnum-1) == b:indent.lnum && s:usestate
+    if prevnonblank(v:lnum-1) == b:indent.lnum && s:usestate
 	" use state (continue from previous line)
     else
 	" start over (know nothing)
-	let b:indent = s:FreshState(a:lnum)
+	let b:indent = s:FreshState(v:lnum)
     endif
 
     if b:indent.block != 0
@@ -470,19 +497,7 @@ endfunc "}}}
 
 " IndHtmlLocal, clear cpo, Modeline: {{{1
 
-com! -nargs=* IndHtmlLocal <args>
-" Examples
-" :IndHtmlLocal call s:IndAdder("html")
-"   add an itag
-"
-" :IndHtmlLocal call s:NoIndAdder("a","html")
-"   remove itags
-"
-" :IndHtmlLocal delfunc s:FreshState
-"   on next :setf html, define functions again
-"
-" :IndHtmlLocal let s:usestate = 0
-"   test performance with state ignored
+com! -nargs=* -complete=command IndHtmlLocal <args>
 
 let &cpo = s:cpo_save
 unlet s:cpo_save
