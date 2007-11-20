@@ -2,8 +2,8 @@
 " General: "{{{
 " File:		html.vim (Vimscript #2075)
 " Author:	Andy Wokula, anwoku#yahoo*de (#* -> @.)
-" Last Change:	2007 Nov 20
-" Version:	0.3
+" Last Change:	2007 Nov 21
+" Version:	0.3.1
 " Vim Version:	Vim7
 " Description:
 "   improved version of the distributed html indent script
@@ -35,7 +35,8 @@
 "	indent line N+1 with "=="   (wrong indent)
 "	indent line N+1 with "=="   (workaround to get correct indent)
 " - attributes spanning over several lines (but occurs rarely in websites)
-" - s:FreshState() doesn't ignore a commented blocktag; nesting in general
+" - s:FreshState(): doesn't ignore a commented blocktag; nesting in general;
+"   workaround: start indenting at a line for which s:FreshState() works ok
 " Hmm:
 " ? use of the term "blocktag"
 " ? call "<!--" and "-->" tags
@@ -96,7 +97,7 @@ set cpo-=C
 let s:usestate = 1
 let s:css1indent = 0
 " not to be changed:
-let s:endtags = [0,0,0,0,0,0,0,0]   " places unused
+let s:endtags = [0,0,0,0,0,0,0,0]   " some places unused
 let s:newstate = {}
 let s:countonly = 0
  "}}}
@@ -150,6 +151,7 @@ call s:IndAdder('style', 4)
 " Exception: handle comment delimiters <!--...--> like block tags
 let s:indent_tags["<!--"] = 5
 let s:indent_tags['-->'] = -5
+let s:endtags[5-2] = "-->"
 "}}}
 
 func! s:CountITags(...) "{{{
@@ -338,7 +340,7 @@ func! s:FreshState(lnum) "{{{
 	call s:CountITags(1)
 	let state.baseindent = indent(comline) + (s:nextrel+s:curline) * &shiftwidth
 	return state
-	" TODO check tags that follow the closing comment delimiter
+	" TODO check tags that follow "-->"
     endif
 
     " else no comments
@@ -386,8 +388,8 @@ func! s:CSSIndent() "{{{
     let pnum = s:css_prevnoncomment(v:lnum - 1, minline)
     if pnum <= minline
 	" < is to catch errors
-	" indent for first content line
-	return 0
+	" indent for first content line after comments
+	return s:css1indent
     endif
     let ind = indent(pnum) + s:css_countbraces(pnum, 1) * &sw
     let pline = getline(pnum)
@@ -406,7 +408,7 @@ func! s:css_prevnoncomment(lnum, stopline) "{{{
     call cursor(lnum, ccol+1)
     let lnum = search('/\*', 'bW', a:stopline)
     if indent(".") == virtcol(".")-1
-	return lnum-1
+	return prevnonblank(lnum-1)
     else
 	return lnum
     endif
