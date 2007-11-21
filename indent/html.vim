@@ -3,7 +3,7 @@
 " File:		html.vim (Vimscript #2075)
 " Author:	Andy Wokula, anwoku#yahoo*de (#* -> @.)
 " Last Change:	2007 Nov 21
-" Version:	0.3.1
+" Version:	0.3.2
 " Vim Version:	Vim7
 " Description:
 "   improved version of the distributed html indent script
@@ -122,7 +122,7 @@ func! s:NoIndAdder(...) "{{{
 	    continue
 	endif
 	unlet s:indent_tags[itag]
-	if itag =~ '^\a\+$'
+	if itag =~ '^\w\+$'
 	    unlet s:indent_tags["/".itag]
 	endif
     endfor
@@ -163,7 +163,7 @@ func! s:CountITags(...) "{{{
 
     if a:0==0
 	let s:block = s:newstate.block
-	let tmpline = substitute(s:curline, '<\zs\/\=\a\+\>\|<!--\|-->', '\=s:CheckTag(submatch(0))', 'g')
+	let tmpline = substitute(s:curline, '<\zs\/\=\w\+\>\|<!--\|-->', '\=s:CheckTag(submatch(0))', 'g')
 	if s:block == 3
 	    let s:newstate.scripttype = s:GetScriptType(matchstr(tmpline, '\C.*<SCRIPT\>\zs[^>]*'))
 	endif
@@ -171,7 +171,7 @@ func! s:CountITags(...) "{{{
     else
 	let s:block = 0		" assume starting outside of a block
 	let s:countonly = 1	" don't change state
-	let tmpline = substitute(s:altline, '<\zs\/\=\a\+\>\|<!--\|-->', '\=s:CheckTag(submatch(0))', 'g')
+	let tmpline = substitute(s:altline, '<\zs\/\=\w\+\>\|<!--\|-->', '\=s:CheckTag(submatch(0))', 'g')
 	let s:countonly = 0
     endif
 endfunc "}}}
@@ -498,8 +498,12 @@ func! HtmlIndent() "{{{
 endfunc "}}}
 
 " IndHtmlLocal, clear cpo, Modeline: {{{1
+func! s:Ihlc(arl, cml, pos)
+    " useful completions for IndHtmlLocal
+    return "let s:css1indent = 0\nfunc! s:CSSIndent()\nlet s:usestate = 1\ncall s:NoIndAdder(\ncall s:IndAdder("
+endfunc
 
-com! -nargs=* -complete=command IndHtmlLocal <args>
+com! -nargs=* -complete=custom,s:Ihlc IndHtmlLocal <args>
 
 let &cpo = s:cpo_save
 unlet s:cpo_save
