@@ -3,7 +3,7 @@
 " File:		html.vim (Vimscript #2075)
 " Author:	Andy Wokula, anwoku#yahoo*de (#* -> @.)
 " Last Change:	2007 Nov 21
-" Version:	0.3.2
+" Version:	0.4
 " Vim Version:	Vim7
 " Description:
 "   improved version of the distributed html indent script
@@ -56,6 +56,11 @@
 "	remove given itags (silently), this is like the former
 "	:let g:html_indent_strict_table = 1
 "
+" :IndHtmlLocal let s:css1indent = "b:indent.blocktagind"
+" :IndHtmlLocal let s:js1indent = "b:indent.blocktagind"
+"	indent the first line after <style> or <script> like with
+"	'autoindent' set
+"
 " :IndHtmlLocal let s:usestate = 0
 "	test performance with state ignored (default 1)
 "
@@ -96,6 +101,7 @@ set cpo-=C
 " Init Script Vars  "{{{
 let s:usestate = 1
 let s:css1indent = 0
+let s:js1indent = 0
 " not to be changed:
 let s:endtags = [0,0,0,0,0,0,0,0]   " some places unused
 let s:newstate = {}
@@ -362,7 +368,7 @@ func! s:Alien3() "{{{
     " <script> javascript
     if prevnonblank(v:lnum-1) == b:indent.blocklnr
 	" indent for the first line after <script>
-	return 0
+	return eval(s:js1indent)
     endif
     if b:indent.scripttype == "javascript"
 	return cindent(v:lnum)
@@ -374,7 +380,7 @@ func! s:Alien4() "{{{
     " <style>
     if prevnonblank(v:lnum-1) == b:indent.blocklnr
 	" indent for first content line
-	return s:css1indent
+	return eval(s:css1indent)
     endif
     return s:CSSIndent()
 endfunc
@@ -389,7 +395,7 @@ func! s:CSSIndent() "{{{
     if pnum <= minline
 	" < is to catch errors
 	" indent for first content line after comments
-	return s:css1indent
+	return eval(s:css1indent)
     endif
     let ind = indent(pnum) + s:css_countbraces(pnum, 1) * &sw
     let pline = getline(pnum)
@@ -500,7 +506,7 @@ endfunc "}}}
 " IndHtmlLocal, clear cpo, Modeline: {{{1
 func! s:Ihlc(arl, cml, pos)
     " useful completions for IndHtmlLocal
-    return "let s:css1indent = 0\nfunc! s:CSSIndent()\nlet s:usestate = 1\ncall s:NoIndAdder(\ncall s:IndAdder("
+    return "let s:js1indent = 0\nlet s:js1indent = \"b:indent.blocktagind\"\nlet s:css1indent = 0\nlet s:css1indent = \"b:indent.blocktagind\"\nfunc! s:CSSIndent()\nlet s:usestate = 1\ncall s:NoIndAdder(\ncall s:IndAdder("
 endfunc
 
 com! -nargs=* -complete=custom,s:Ihlc IndHtmlLocal <args>
