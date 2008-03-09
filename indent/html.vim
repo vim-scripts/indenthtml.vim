@@ -2,8 +2,8 @@
 " General: "{{{
 " File:		html.vim (Vimscript #2075)
 " Author:	Andy Wokula, anwoku#yahoo*de (#* -> @.)
-" Last Change:	2007 Nov 21
-" Version:	0.4
+" Last Change:	2008 Mar 07
+" Version:	0.5
 " Vim Version:	Vim7
 " Description:
 "   improved version of the distributed html indent script
@@ -34,9 +34,13 @@
 "	change line N with ">>"	    (no update of state)
 "	indent line N+1 with "=="   (wrong indent)
 "	indent line N+1 with "=="   (workaround to get correct indent)
-" - attributes spanning over several lines (but occurs rarely in websites)
+"   checking b:changedtick might help
 " - s:FreshState(): doesn't ignore a commented blocktag; nesting in general;
 "   workaround: start indenting at a line for which s:FreshState() works ok
+" Bugs:
+" - attributes spanning over several lines (but occurs rarely in websites)
+" + v0.5 |<div>            | vs. |<div>        |
+"        |<div></div></div>|     |   text</div>|
 " Hmm:
 " ? use of the term "blocktag"
 " ? call "<!--" and "-->" tags
@@ -56,10 +60,18 @@
 "	remove given itags (silently), this is like the former
 "	:let g:html_indent_strict_table = 1
 "
+" :IndHtmlLocal let s:css1indent = 0
+" :IndHtmlLocal let s:css1indent = "indent(prevnonblank(v:lnum-1))"
 " :IndHtmlLocal let s:css1indent = "b:indent.blocktagind"
-" :IndHtmlLocal let s:js1indent = "b:indent.blocktagind"
-"	indent the first line after <style> or <script> like with
-"	'autoindent' set
+"	set the indent expression for the first line after <style>:
+"	1. zero indent (default)
+"	2. autoindent
+"	3. the style tag's indent
+"	include "+ &shiftwidth" in the expression to add an indent step
+"
+" :IndHtmlLocal let s:js1indent = 0
+"	set the indent expression for the first line after <script> (see
+"	above)
 "
 " :IndHtmlLocal let s:usestate = 0
 "	test performance with state ignored (default 1)
@@ -84,7 +96,7 @@ endif
 let b:did_indent = 1
 
 setlocal indentexpr=HtmlIndent()
-setlocal indentkeys=o,O,*<Return>,<>>,{,},!^F
+setlocal indentkeys=o,O,<Return>,<>>,{,},!^F
 
 let b:indent = {"lnum": -1}
 let b:undo_indent = "set inde< indk<| unlet b:indent"
@@ -307,8 +319,8 @@ func! s:FreshState(lnum) "{{{
 	" handle special case: previous line (= state.lnum) contains a
 	" closing blocktag which is preceded by line-noise;
 	" blocktag == "/..."
-	let swtag = match(tagline, '^\s*<') >= 0
-	if !swtag
+	let swendtag = match(tagline, '^\s*</') >= 0
+	if !swendtag
 	    let [bline, bcol] = searchpos('<'.blocktag[1:].'\>', "bW")
 	    let s:altline = tolower(getline(bline)[: bcol-2])
 	    call s:CountITags(1)
@@ -352,9 +364,9 @@ func! s:FreshState(lnum) "{{{
     " else no comments
     call s:CountITags(1)
     let state.baseindent = indent(state.lnum) + s:nextrel * &shiftwidth
-    " line starts with tag
-    let swtag = match(s:altline, '^\s*<') >= 0
-    if !swtag
+    " line starts with end tag
+    let swendtag = match(s:altline, '^\s*</') >= 0
+    if !swendtag
 	let state.baseindent += s:curind * &shiftwidth
     endif
     return state
@@ -450,7 +462,7 @@ func! HtmlIndent() "{{{
     let s:newstate.lnum = v:lnum
 
     " is the first non-blank in the line the start of a tag?
-    let swtag = match(s:curline, '^\s*<') >= 0
+    let swendtag = match(s:curline, '^\s*</') >= 0
 
     if prevnonblank(v:lnum-1) == b:indent.lnum && s:usestate
 	" use state (continue from previous line)
@@ -459,9 +471,8 @@ func! HtmlIndent() "{{{
 	let b:indent = s:FreshState(v:lnum)
     endif
 
-    if b:indent.block != 0
+    if b:indent.block >= 2
 	" within block
-	" if not 0 then always >= 2 (esp. not negative)
 	let endtag = s:endtags[b:indent.block-2]
 	let blockend = stridx(s:curline, endtag)
 	if blockend >= 0
@@ -470,7 +481,7 @@ func! HtmlIndent() "{{{
 	    " calc indent for REST OF LINE (may start more blocks):
 	    let s:curline = strpart(s:curline, blockend+strlen(endtag))
 	    call s:CountITags()
-	    if swtag && b:indent.block != 5
+	    if swendtag && b:indent.block != 5
 		let indent = b:indent.blocktagind + s:curind * &shiftwidth
 		let s:newstate.baseindent = indent + s:nextrel * &shiftwidth
 	    else
@@ -488,9 +499,10 @@ func! HtmlIndent() "{{{
 	endif
     else
 	" not within a block - within usual html
+	" if < 2 then always 0
 	let s:newstate.block = b:indent.block
 	call s:CountITags()
-	if swtag
+	if swendtag
 	    let indent = b:indent.baseindent + s:curind * &shiftwidth
 	    let s:newstate.baseindent = indent + s:nextrel * &shiftwidth
 	else
