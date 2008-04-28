@@ -1,95 +1,56 @@
-" Vim indent script
+" Vim indent script for HTML
 " General: "{{{
 " File:		html.vim (Vimscript #2075)
-" Author:	Andy Wokula, anwoku#yahoo*de (#* -> @.)
-" Last Change:	2008 Mar 07
-" Version:	0.5
+" Author:	Andy Wokula <anwoku@yahoo.de>
+" Last Change:	2008 Apr 28
+" Version:	0.6
 " Vim Version:	Vim7
 " Description:
-"   improved version of the distributed html indent script
-" - Based on:
-"	indent/html.vim from J. Zellner (2006 Jun 05)
-"	indent/css.vim from N. Weibull (2006 Dec 20)
-" - indenting regions:
-"	Blocktag : Indent-Expr
-"	   <pre> : -1 (= keep indent)
-"	<script> : 0		    if first line of block
+"   Improved version of the distributed html indent script, faster on a
+"   range of lines.
+"
+" Customization:
+"   This section is about variables you can set in your vimrc.
+"
+" - You can set the indent for the first line after <script> and <style>
+"   tags (default "zero"):
+"
+"	:let g:html_indent_script1 = "inc"
+" 	:let g:html_indent_style1 = "inc"
+"
+"	VALUE	MEANING
+"	"zero"	zero indent	    
+"	"auto"	auto indent (same indent as the blocktag)
+"	"inc"	auto indent + one indent step
+"
+" - Many tags increase the indent for what follows per default (search below
+"   for "IndAdder Calls").  You can add further tags with
+"
+"	:let g:html_indent_inctags = "html,body,head,tbody"
+"
+"   You can also remove such tags with
+"
+"	:let g:html_indent_autotags = "th,td,tr,tfoot,thead"
+"
+"   Default value is empty for both variables.  Note: the default "inctags"
+"   are defined once per session.
+"
+" Detail:
+"   Calculation of indent inside "block tags" with "alien" content:
+"	TAG	   INDENT EXPR	    WHEN APPLICABLE
+"	<script> : {customizable}   if first line of block
 "		 : cindent(v:lnum)  if attributes empty or contain "java"
 "		 : -1		    else (vbscript, tcl, ...)
-"	<style>  : 0		    if first line of block
-"		 : GetCSSIndent()   else (v0.3)
+"	<style>  : {customizable}   if first line of block
+"		 : GetCSSIndent()   else
 "	<!-- --> : -1
-" - speedup: uses a state to support indenting a range of lines; benefits of
-"   Vim7, uses search() instead of searchpair()
-" - more exact when checking tags in a line
-" - per default no extra indent for <html>, <head>, <body>
-" - no syntax dependencies
-" Example:
-"   2900 non-blank lines of http://www.weather.com/weather/local/USPA0372
-"   without state: 11.75 sec (already much faster than the old script)
-"   with state: 2.27 sec (again 5 times faster) (machine 1.2 GHz Athlon)
-" Problems:
-" - natural state problem: to reproduce,
-"	indent line N with "=="
-"	change line N with ">>"	    (no update of state)
-"	indent line N+1 with "=="   (wrong indent)
-"	indent line N+1 with "=="   (workaround to get correct indent)
-"   checking b:changedtick might help
-" - s:FreshState(): doesn't ignore a commented blocktag; nesting in general;
-"   workaround: start indenting at a line for which s:FreshState() works ok
-" Bugs:
-" - attributes spanning over several lines (but occurs rarely in websites)
-" + v0.5 |<div>            | vs. |<div>        |
-"        |<div></div></div>|     |   text</div>|
-" Hmm:
-" ? use of the term "blocktag"
-" ? call "<!--" and "-->" tags
- "}}}
-" Customization: "{{{
-" :IndHtmlLocal {cmd}
-"	change internals after loading the script, e.g. command is available
-"	in after/indent/html.vim
 "
-" Examples:
-" :IndHtmlLocal call s:IndAdder("body","head","tbody")
-"	add tags "itags" that add an indent step.  The above command
-"	restores defaults of the distributed script, that could formerly be
-"	disabled with  :let g:html_indent_strict = 1
-"
-" :IndHtmlLocal call s:NoIndAdder("th","td","tr","tfoot","thead")
-"	remove given itags (silently), this is like the former
-"	:let g:html_indent_strict_table = 1
-"
-" :IndHtmlLocal let s:css1indent = 0
-" :IndHtmlLocal let s:css1indent = "indent(prevnonblank(v:lnum-1))"
-" :IndHtmlLocal let s:css1indent = "b:indent.blocktagind"
-"	set the indent expression for the first line after <style>:
-"	1. zero indent (default)
-"	2. autoindent
-"	3. the style tag's indent
-"	include "+ &shiftwidth" in the expression to add an indent step
-"
-" :IndHtmlLocal let s:js1indent = 0
-"	set the indent expression for the first line after <script> (see
-"	above)
-"
-" :IndHtmlLocal let s:usestate = 0
-"	test performance with state ignored (default 1)
-"
-" :IndHtmlLocal func! s:CSSIndent()
-" :    return -1
-" :endfunc
-" :IndHtmlLocal let s:css1indent = -1	" default 0
-"	disable the CSS-Indenter -- use indent -1 for <style> regions
-"	(this is not very practical, just a demo of what can be done)
-"
-" :delfunc HtmlIndent
-" :IndHtmlLocal let s:css1indent = 0
-" :edit					" reload .html file
-"	re-enable the CSS-Indenter during session
- "}}}
+" Credits:
+"	indent/html.vim (2006 Jun 05) from J. Zellner
+"	indent/css.vim (2006 Dec 20) from N. Weibull
+" }}}
 
-" Init Folklore: "{{{
+" Init Folklore, check user settings (2nd time ++) "{{{
 if exists("b:did_indent")
     finish
 endif
@@ -103,12 +64,32 @@ let b:undo_indent = "set inde< indk<| unlet b:indent"
 
 " Load Once:
 if exists("*HtmlIndent")
+    call s:CheckUserSettings()
     finish
 endif
 
 let s:cpo_save = &cpo
 set cpo-=C
  "}}}
+
+func! s:CheckUserSettings() "{{{
+    if exists("g:html_indent_inctags")
+	call call("s:IndAdder", split(g:html_indent_inctags, ","))
+    endif
+    if exists("g:html_indent_autotags")
+	call call("s:NoIndAdder", split(g:html_indent_autotags, ","))
+    endif
+
+    let indone = {"zero": 0
+		\,"auto": "indent(prevnonblank(v:lnum-1))"
+		\,"inc": "b:indent.blocktagind + &shiftwidth"}
+    if exists("g:html_indent_script1")
+	let s:js1indent = get(indone, g:html_indent_script1, indone.zero)
+    endif
+    if exists("g:html_indent_style1")
+	let s:css1indent = get(indone, g:html_indent_style1, indone.zero)
+    endif
+endfunc "}}}
 
 " Init Script Vars  "{{{
 let s:usestate = 1
@@ -515,13 +496,11 @@ func! HtmlIndent() "{{{
 
 endfunc "}}}
 
-" IndHtmlLocal, clear cpo, Modeline: {{{1
-func! s:Ihlc(arl, cml, pos)
-    " useful completions for IndHtmlLocal
-    return "let s:js1indent = 0\nlet s:js1indent = \"b:indent.blocktagind\"\nlet s:css1indent = 0\nlet s:css1indent = \"b:indent.blocktagind\"\nfunc! s:CSSIndent()\nlet s:usestate = 1\ncall s:NoIndAdder(\ncall s:IndAdder("
-endfunc
+" check user settings (first time), clear cpo, Modeline: {{{1
 
-com! -nargs=* -complete=custom,s:Ihlc IndHtmlLocal <args>
+" com! -nargs=* IndHtmlLocal <args>
+
+call s:CheckUserSettings()
 
 let &cpo = s:cpo_save
 unlet s:cpo_save
