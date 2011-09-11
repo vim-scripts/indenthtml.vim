@@ -19,6 +19,7 @@ Customization:  Variables you can set in the vimrc.  Given values are examples t
 
   The following <tags> increase the indent (for what follows) per default (taken from the original script, but slightly modified):
       a, abbr, acronym, address, b, bdo, big, blockquote, button, caption, center, cite, code, colgroup, del, dfn, dir, div, dl, em, fieldset, font, form, frameset, h1, h2, h3, h4, h5, h6, i, iframe, ins, kbd, label, legend, map, menu, noframes, noscript, object, ol, optgroup, q, s, samp, select, small, span, strong, sub, sup, table, textarea, title, tt, u, ul, var, th, td, tr, tfoot, thead
+      (added with v0.8): area, article, aside, audio, bdi, canvas, command, datalist, details, embed, figure, footer, header, group, keygen, mark, math, meter, nav, output, progress, ruby, section, svg, texture, time, video, wbr, text
 
   You can add further tags with
 
