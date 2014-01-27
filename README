@@ -42,5 +42,6 @@ Problems and Bugs:
   - sometimes cindent() thinks it is better to use zero indent for what follows ...
   - some tags increase indent per default, but their closing tag is optional, e.g. <td> -- the script cannot detect missing closing tags
 
-
 Suggestions, bug reports welcome (I'm not writing HTML regularly).
+
+2013 Jun 13: Vim 7.3.1180 or later includes the latest version of this script.
