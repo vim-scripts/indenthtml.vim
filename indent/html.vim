@@ -154,6 +154,10 @@ func! s:CountITags(...) "{{{
 	let tmpline = substitute(s:curline, '<\zs\/\=\w\+\>\|<!--\|-->', '\=s:CheckTag(submatch(0))', 'g')
 	if s:block == 3
 	    let s:newstate.scripttype = s:GetScriptType(matchstr(tmpline, '\C.*<SCRIPT\>\zs[^>]*'))
+	    " assume non-JS content of <script> tag can be indented
+	    if s:newstate.scripttype != "javascript"
+	      let s:block = 0
+	    endif
 	endif
 	let s:newstate.block = s:block
     else
